@@ -1,3 +1,7 @@
+const session = require("express-session");
+
+const knexSessionStore = require("connect-session-knex")(session);
+
 const express = require("express");
 const helmet = require("helmet");
 const cors = require("cors");
@@ -7,25 +11,56 @@ const cors = require("cors");
   To respect users' privacy, do NOT send them a cookie unless they log in.
   This is achieved by setting 'saveUninitialized' to false, and by not
   changing the `req.session` object unless the user authenticates.
-
   Users that do authenticate should have a session persisted on the server,
   and a cookie set on the client. The name of the cookie should be "chocolatechip".
-
   The session can be persisted in memory (would not be adecuate for production)
   or you can use a session store like `connect-session-knex`.
  */
 
+const usersRouter = require("./users/users-router");
+const aRouter = require("./auth/auth-router");
+const loginAuth = require("./auth/auth-middleware");
+
 const server = express();
+
+
+const sessionConfig = {
+  name: "UserSession",
+  secret: "session_Secret",
+  cookie: {
+    maxAge: 1000 * 60 * 60,
+    secure: false,
+    httpOnly: true,
+  },
+  resave: false,
+  saveUninitialized: false,
+
+  store: new knexSessionStore({
+    knex: require("../data/db-config"),
+    tablename: "sessions",
+    sidfieldname: "sid",
+    createtable: true,
+    clearInterval: 1000 * 60 * 60,
+  }),
+};
+
 
 server.use(helmet());
 server.use(express.json());
 server.use(cors());
 
+
+server.use(session(sessionConfig));
+
+server.use("/api/users", loginAuth, usersRouter);
+server.use("/api/auth", aRouter);
+
 server.get("/", (req, res) => {
   res.json({ api: "up" });
 });
 
-server.use((err, req, res, next) => { // eslint-disable-line
+server.use((err, req, res, next) => {
+  // eslint-disable-line
   res.status(500).json({
     message: err.message,
     stack: err.stack,
